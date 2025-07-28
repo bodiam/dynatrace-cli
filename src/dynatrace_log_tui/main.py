@@ -14,7 +14,7 @@ from .data import generate_more_logs, filter_logs
 from .api_client import DynatraceClient
 from .models import TimeRange
 from .ui_components import LogTable, QueryTextArea, LogDetails, LogTablePopulator
-from .modals import SaveQueryModal, LoadQueryModal, ColumnSelectionModal, QueryHistoryModal
+from .modals import SaveQueryModal, LoadQueryModal, ColumnSelectionModal, QueryHistoryModal, SearchModal
 from .query_manager import QueryManager, QueryHistory, QueryProcessor
 
 
@@ -91,6 +91,10 @@ class DynatraceLogTUI(App):
         Binding("[", "decrease_details", "Details-"),
         Binding("ctrl+0", "toggle_details", "Toggle Details"),
         Binding("ctrl+e", "export_logs", "Export"),
+        Binding("/", "search", "Search"),
+        Binding("n", "search_next", "Next Match"),
+        Binding("shift+n", "search_prev", "Prev Match"),
+        Binding("escape", "clear_search", "Clear Search"),
         Binding("f1", "help", "Help"),
     ]
     
@@ -148,6 +152,12 @@ class DynatraceLogTUI(App):
         self.details_heights = [5, 10, 15, 20, 30]  # Available heights
         self.current_details_index = 1  # Start with height 10 (index 1)
         self.details_visible = True
+        
+        # Search functionality
+        self.search_term = ""
+        self.search_matches = []  # List of (row_index, column_index) tuples
+        self.current_match_index = -1
+        self.search_active = False
     
     def compose(self) -> ComposeResult:
         yield Header()
@@ -223,7 +233,7 @@ class DynatraceLogTUI(App):
     
     def populate_table(self):
         table = self.query_one("#log_table", LogTable)
-        LogTablePopulator.populate_table(table, self.current_logs, self.visible_columns)
+        LogTablePopulator.populate_table(table, self.current_logs, self.visible_columns, self.search_term)
         # Update log count after populating
         self.update_log_count()
     
@@ -464,6 +474,124 @@ class DynatraceLogTUI(App):
         except Exception as e:
             self.notify(f"Export failed: {str(e)}")
     
+    def action_search(self):
+        """Open search dialog"""
+        def handle_search_result(result):
+            if result:
+                if result.get("action") == "search":
+                    search_term = result.get("term", "")
+                    if search_term:
+                        self._perform_search(search_term)
+                    else:
+                        self._clear_search()
+                elif result.get("action") == "clear":
+                    self._clear_search()
+        
+        self.push_screen(SearchModal(self.search_term), handle_search_result)
+    
+    def action_search_next(self):
+        """Navigate to next search match"""
+        if not self.search_active or not self.search_matches:
+            self.notify("No active search. Press / to search.")
+            return
+        
+        self.current_match_index = (self.current_match_index + 1) % len(self.search_matches)
+        self._navigate_to_match()
+    
+    def action_search_prev(self):
+        """Navigate to previous search match"""
+        if not self.search_active or not self.search_matches:
+            self.notify("No active search. Press / to search.")
+            return
+        
+        self.current_match_index = (self.current_match_index - 1) % len(self.search_matches)
+        self._navigate_to_match()
+    
+    def action_clear_search(self):
+        """Clear current search and highlighting"""
+        self._clear_search()
+    
+    def _perform_search(self, search_term: str):
+        """Perform search and find all matches"""
+        self.search_term = search_term.lower()
+        self.search_matches = []
+        self.current_match_index = -1
+        self.search_active = True
+        
+        # Find all matches in current logs
+        for row_index, log in enumerate(self.current_logs):
+            for col_index, column in enumerate(self.visible_columns):
+                if column == "Level":  # Skip level column as it's not text searchable
+                    continue
+                
+                # Get the text content for this cell
+                cell_text = ""
+                if column == "Timestamp":
+                    cell_text = log["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
+                elif column == "Service":
+                    cell_text = str(log["service"])
+                elif column == "Message":
+                    cell_text = str(log["message"])
+                elif column == "Host":
+                    cell_text = str(log["host"])
+                elif column == "Trace ID":
+                    cell_text = str(log["trace_id"])
+                elif column == "Span ID":
+                    cell_text = str(log["span_id"])
+                elif column == "Content":
+                    cell_text = str(log["content"])
+                
+                # Check if search term is in this cell
+                if self.search_term in cell_text.lower():
+                    self.search_matches.append((row_index, col_index))
+        
+        # Update table with highlighting
+        self.populate_table()
+        
+        # Navigate to first match or show no results
+        if self.search_matches:
+            self.current_match_index = 0
+            self._navigate_to_match()
+            self.notify(f"Found {len(self.search_matches)} matches for '{search_term}'")
+        else:
+            self.notify(f"No matches found for '{search_term}'")
+    
+    def _navigate_to_match(self):
+        """Navigate to the current search match"""
+        if not self.search_matches or self.current_match_index < 0:
+            return
+        
+        row_index, col_index = self.search_matches[self.current_match_index]
+        
+        # Select the row in the table
+        table = self.query_one("#log_table", LogTable)
+        try:
+            # Move cursor to the specific row and column
+            table.move_cursor(row=row_index, column=col_index)
+            # Scroll to make sure the row is visible
+            table.scroll_to(row=row_index, column=col_index, animate=False)
+        except Exception:
+            # Fallback: just move cursor to row
+            try:
+                table.move_cursor(row=row_index)
+            except Exception:
+                # Last fallback: just set cursor coordinate
+                table.cursor_coordinate = (row_index, col_index)
+        
+        # Update status
+        self.notify(f"Match {self.current_match_index + 1} of {len(self.search_matches)}")
+    
+    def _clear_search(self):
+        """Clear search state and highlighting"""
+        self.search_term = ""
+        self.search_matches = []
+        self.current_match_index = -1
+        self.search_active = False
+        
+        # Refresh table without highlighting
+        self.populate_table()
+        self.notify("Search cleared")
+
     def action_help(self):
         help_text = """
 Dynatrace Log TUI - Help
@@ -476,6 +604,10 @@ Keyboard Shortcuts:
 - Ctrl+H: Browse query history (opens dialog)
 - Ctrl+C: Clear current query
 - Ctrl+O: Select columns to display (opens dialog)
+- /: Search within log entries
+- n: Next search match
+- Shift+N: Previous search match
+- Escape: Clear search highlighting
 - ]: Increase log details height
 - [: Decrease log details height
 - Ctrl+0: Toggle log details visibility
@@ -487,10 +619,12 @@ Usage:
 2. Press Ctrl+R, Ctrl+Enter, or click "Run Query" to execute
 3. Browse results in the table using arrow keys
 4. Select a row to view detailed log information
-5. Save frequently used queries for later use
-6. Browse automatic query history with Ctrl+H
-7. Export filtered results to CSV file
-8. Clear query with Ctrl+K or Escape when focused on query field
+5. Use / to search within the log entries
+6. Use n/N to navigate between search matches
+7. Save frequently used queries for later use
+8. Browse automatic query history with Ctrl+H
+9. Export filtered results to CSV file
+10. Clear query with Ctrl+K or Escape when focused on query field
 
 Query Examples:
 - "ERROR" - Show only error logs
@@ -499,6 +633,7 @@ Query Examples:
 
 Features:
 - Real-time filtering of log data
+- Search and highlight within displayed logs
 - Multiple saved queries with CRUD operations
 - CSV export of filtered results
 - Detailed log inspection

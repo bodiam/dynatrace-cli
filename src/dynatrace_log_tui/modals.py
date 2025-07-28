@@ -358,3 +358,71 @@ class QueryHistoryModal(ModalScreen):
     def action_page_down(self) -> None:
         history_list = self.query_one("#history_query_list")
         history_list.scroll_page_down()
+
+
+class SearchModal(ModalScreen):
+    """Modal for searching within log entries"""
+    
+    CSS = """
+    SearchModal {
+        align: center middle;
+    }
+    
+    #search_dialog {
+        width: 60;
+        height: 11;
+        background: $surface;
+        border: solid $primary;
+        padding: 1;
+    }
+    
+    #search_input {
+        width: 1fr;
+        height: 3;
+        margin: 1 0;
+    }
+    
+    SearchModal Button {
+        margin: 1;
+        min-width: 10;
+    }
+    """
+    
+    def __init__(self, current_search: str = ""):
+        super().__init__()
+        self.current_search = current_search
+    
+    def compose(self) -> ComposeResult:
+        with Container(id="search_dialog"):
+            yield Static("Search Logs", classes="status")
+            yield Static("Enter search term (case-insensitive):")
+            yield Input(
+                placeholder="Search term...", 
+                value=self.current_search,
+                id="search_input"
+            )
+            with Horizontal():
+                yield Button("Search", id="search_confirm", variant="primary")
+                yield Button("Clear", id="search_clear")
+                yield Button("Cancel", id="search_cancel")
+    
+    def on_mount(self) -> None:
+        # Focus the search input when modal opens
+        search_input = self.query_one("#search_input", Input)
+        search_input.focus()
+    
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "search_confirm":
+            search_input = self.query_one("#search_input", Input)
+            search_term = search_input.value.strip()
+            self.dismiss({"action": "search", "term": search_term})
+        elif event.button.id == "search_clear":
+            self.dismiss({"action": "clear"})
+        elif event.button.id == "search_cancel":
+            self.dismiss({"action": "cancel"})
+    
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        # Allow Enter key to trigger search
+        if event.input.id == "search_input":
+            search_term = event.input.value.strip()
+            self.dismiss({"action": "search", "term": search_term})

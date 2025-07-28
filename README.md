@@ -7,6 +7,7 @@ A Terminal User Interface (TUI) application for querying and browsing Dynatrace 
 - **Real Dynatrace API Integration**: Execute DQL queries against your Dynatrace environment
 - **Interactive Log Browser**: Browse results in a table with keyboard navigation
 - **Time Range Selection**: Choose from predefined time ranges (30min, 1h, 2h, 6h, today, yesterday, 24h, 7d)
+- **Log Search & Highlighting**: Search within log entries with yellow highlighting and match navigation
 - **Detailed Log Inspection**: View complete log details in a dedicated panel
 - **Query Management**: Save, load, and manage frequently used queries
 - **Query History**: Browse and reuse previous queries with delete/clear options
@@ -113,6 +114,10 @@ dynatrace-log-tui --development
 - `Ctrl+H`: Browse query history (with delete/clear options)
 - `Ctrl+C`: Clear current query
 - `Ctrl+O`: Select columns to display
+- `/`: Search within log entries (case-insensitive)
+- `n`: Navigate to next search match
+- `Shift+N`: Navigate to previous search match
+- `Escape`: Clear search highlighting
 - `Ctrl+E`: Export current results to CSV
 - `]` / `[`: Increase/decrease log details panel height
 - `Ctrl+0`: Toggle log details panel visibility
