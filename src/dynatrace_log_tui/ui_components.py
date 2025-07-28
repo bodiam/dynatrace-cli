@@ -5,6 +5,7 @@ from textual.widgets import DataTable, TextArea
 from textual.binding import Binding
 from typing import Dict, Any
 from rich.text import Text
+from rich.markup import escape
 
 
 class LogTable(DataTable):
@@ -86,24 +87,34 @@ class LogTablePopulator:
             row_data = []
             for column in visible_columns:
                 if column == "Timestamp":
+                    # Timestamp is safe, no need to escape
                     row_data.append(log["timestamp"].strftime("%Y-%m-%d %H:%M:%S"))
                 elif column == "Level":
+                    # Level uses Text with style, no markup parsing
                     level_style = LogTablePopulator.get_level_style(log["level"])
                     row_data.append(Text(log["level"], style=level_style))
                 elif column == "Service":
-                    row_data.append(log["service"])
+                    # Escape service name to prevent markup interpretation
+                    row_data.append(escape(str(log["service"])))
                 elif column == "Message":
-                    message = log["message"]
-                    row_data.append(message[:50] + "..." if len(message) > 50 else message)
+                    # Escape message content and truncate if needed
+                    message = str(log["message"])
+                    escaped_message = escape(message)
+                    row_data.append(escaped_message[:50] + "..." if len(escaped_message) > 50 else escaped_message)
                 elif column == "Host":
-                    row_data.append(log["host"])
+                    # Escape host name
+                    row_data.append(escape(str(log["host"])))
                 elif column == "Trace ID":
-                    row_data.append(log["trace_id"])
+                    # Escape trace ID
+                    row_data.append(escape(str(log["trace_id"])))
                 elif column == "Span ID":
-                    row_data.append(log["span_id"])
+                    # Escape span ID
+                    row_data.append(escape(str(log["span_id"])))
                 elif column == "Content":
-                    content = log["content"]
-                    row_data.append(content[:30] + "..." if len(content) > 30 else content)
+                    # Escape content and truncate if needed
+                    content = str(log["content"])
+                    escaped_content = escape(content)
+                    row_data.append(escaped_content[:30] + "..." if len(escaped_content) > 30 else escaped_content)
             
             table.add_row(*row_data)
     
@@ -117,15 +128,16 @@ class LogTablePopulator:
     @staticmethod
     def format_log_details(log: Dict[str, Any]) -> str:
         """Format log details for display"""
+        # Escape all string content to prevent markup interpretation
         return f"""Timestamp: {log['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}
-Level: {log['level']}
-Service: {log['service']}
-Host: {log['host']}
-Trace ID: {log['trace_id']}
-Span ID: {log['span_id']}
+Level: {escape(str(log['level']))}
+Service: {escape(str(log['service']))}
+Host: {escape(str(log['host']))}
+Trace ID: {escape(str(log['trace_id']))}
+Span ID: {escape(str(log['span_id']))}
 
 Message:
-{log['message']}
+{escape(str(log['message']))}
 
 Content:
-{log['content']}"""
+{escape(str(log['content']))}"""

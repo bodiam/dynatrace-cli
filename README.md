@@ -71,18 +71,25 @@ dynatrace-log-tui
 git clone <repository-url>
 cd dynatrace-log-tui
 
-# Install dependencies and run
+# Install dependencies and run in production mode (requires API credentials)
 uv run python -m src.dynatrace_log_tui.main
 
-# Or install as a package
+# Or run in development mode (uses dummy data, no credentials required)
+uv run python -m src.dynatrace_log_tui.main --development
+
+# Or install as a package and run
 uv pip install -e .
 dynatrace-log-tui
+
+# Development mode with installed package
+dynatrace-log-tui --development
 ```
 
 ## Usage
 
 ### Basic Operations
 
+#### Production Mode (with API credentials)
 1. **Set Environment Variables**: Configure `DYNATRACE_BASE_URL` and `DYNATRACE_TOKEN`
 2. **Start the Application**: Run `dynatrace-log-tui` or `uv run python -m src.dynatrace_log_tui.main`
 3. **Select Time Range**: Choose from the dropdown (defaults to "Last 30 minutes")
@@ -90,6 +97,12 @@ dynatrace-log-tui
 5. **Execute Query**: Press `Ctrl+R`, `Ctrl+Enter`, or click "Run Query"
 6. **Browse Results**: Use arrow keys to navigate the log table
 7. **View Details**: Select a log entry to see detailed information
+
+#### Development Mode (dummy data)
+1. **Start the Application**: Run `dynatrace-log-tui --development` or `uv run python -m src.dynatrace_log_tui.main --development`
+2. **Test UI Features**: All functionality works with generated dummy data
+3. **Simulate Queries**: Enter search terms to filter dummy log entries
+4. **No API Required**: Perfect for testing, development, and demonstrations
 
 ### Keyboard Shortcuts
 
@@ -145,19 +158,21 @@ The application provides clear error messages for common issues:
 - **Query Errors**: Clear error messages from Dynatrace API
 - **Network Timeouts**: Configurable timeout handling
 
-## Data Modes
+## Operating Modes
 
-### Production Mode (API Connected)
-- Real-time data from your Dynatrace environment
-- Full DQL query support
-- Configurable time ranges
-- Live log streaming
+### Production Mode (Default)
+- **Requirements**: `DYNATRACE_BASE_URL` and `DYNATRACE_TOKEN` must be set
+- **Data Source**: Real-time data from your Dynatrace environment
+- **Features**: Full DQL query support, configurable time ranges
+- **Usage**: `dynatrace-log-tui` or `uv run python -m src.dynatrace_log_tui.main`
+- **Error Handling**: Application exits with helpful error message if credentials are missing
 
-### Fallback Mode (Dummy Data)
-- Automatically activated when API credentials are missing
-- Generated dummy data for testing and development
-- All UI features remain functional
-- Clear indicators showing dummy data mode
+### Development Mode
+- **Requirements**: No API credentials needed
+- **Data Source**: Generated dummy data for testing
+- **Features**: All UI features functional, query filtering simulation
+- **Usage**: `dynatrace-log-tui --development` or `uv run python -m src.dynatrace_log_tui.main --development`
+- **Purpose**: Testing, development, and demonstration without API access
 
 ## Development
 
@@ -196,14 +211,20 @@ The application requires these environment variables:
 git clone <repository-url>
 cd dynatrace-log-tui
 
-# Set environment variables
+# Install dependencies
+uv pip install -e .
+
+# Run in development mode (no API credentials needed)
+dynatrace-log-tui --development
+
+# Or run with uv directly
+uv run python -m src.dynatrace_log_tui.main --development
+
+# For production testing, set environment variables:
 export DYNATRACE_BASE_URL='https://your-env.apps.dynatrace.com'
 export DYNATRACE_TOKEN='your-token-here'
 
-# Install in development mode
-uv pip install -e .
-
-# Run the application
+# Then run in production mode
 dynatrace-log-tui
 ```
 

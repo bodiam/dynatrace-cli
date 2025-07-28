@@ -5,6 +5,8 @@ from textual.binding import Binding
 from textual.reactive import reactive
 from textual import events
 import csv
+import argparse
+import sys
 from datetime import datetime
 from typing import List, Dict, Any
 
@@ -95,24 +97,40 @@ class DynatraceLogTUI(App):
     current_logs = reactive([])
     selected_log = reactive(None)
     
-    def __init__(self):
+    def __init__(self, development_mode: bool = False):
         super().__init__()
         self.query_manager = QueryManager()
         self.query_history = QueryHistory()
+        self.development_mode = development_mode
         
         # Initialize Dynatrace client with error handling
-        try:
-            self.dynatrace_client = DynatraceClient()
-            self.use_dummy_data = False
-        except ValueError as e:
-            # If token is not set, use dummy data and show error
+        if development_mode:
+            # In development mode, always use dummy data
             self.dynatrace_client = None
             self.use_dummy_data = True
-            self.token_error = str(e)
+            self.token_error = "Development mode - using dummy data"
+        else:
+            # In production mode, require API credentials
+            try:
+                self.dynatrace_client = DynatraceClient()
+                self.use_dummy_data = False
+            except ValueError as e:
+                # In production mode, exit if credentials are missing
+                print(f"Error: {e}")
+                print("\nTo run in development mode with dummy data, use:")
+                print("  uv run python -m src.dynatrace_log_tui.main --development")
+                sys.exit(1)
         
-        # Initialize with dummy data for now
-        self.all_logs = generate_more_logs(200)
-        self.current_logs = self.all_logs.copy()
+        # Initialize data based on mode
+        if self.development_mode:
+            # Only use dummy data in development mode
+            self.all_logs = generate_more_logs(200)
+            self.current_logs = self.all_logs.copy()
+        else:
+            # In production mode, start with empty logs and fetch real data on mount
+            self.all_logs = []
+            self.current_logs = []
+        
         self.current_query_name = ""
         self.current_time_range = "30m"  # Default time range
         
@@ -149,7 +167,7 @@ class DynatraceLogTUI(App):
                             id="time_range_select"
                         )
                     yield Button("Run Query", id="run_btn", classes="button")
-                yield Static(f"Total Logs: {len(self.all_logs)}", id="log_count", classes="status")
+                yield Static("Loading...", id="log_count", classes="status")
             
             # Main content area
             with Vertical(id="main_content"):
@@ -161,14 +179,43 @@ class DynatraceLogTUI(App):
     
     def on_mount(self) -> None:
         self.setup_table()
-        self.populate_table()
+        
         # Set placeholder-like text for the query input
         query_input = self.query_one("#query_input", QueryTextArea)
-        if self.use_dummy_data:
-            query_input.text = f"# {self.token_error}\n# Using dummy data for now...\n# Enter your DQL query here...\n# Use Ctrl+R or Ctrl+Enter to run"
-            self.notify("Warning: Using dummy data - Dynatrace token not configured")
+        
+        if self.development_mode:
+            # Development mode - use dummy data
+            self.populate_table()
+            query_input.text = "# Development mode - using dummy data\n# Enter your DQL query here to test filtering...\n# Use Ctrl+R or Ctrl+Enter to run"
+            self.notify("Development mode: Using dummy data for testing")
         else:
-            query_input.text = "# Enter your DQL query here...\n# Use Ctrl+R or Ctrl+Enter to run"
+            # Production mode - fetch real logs from Dynatrace
+            query_input.text = "# Connected to Dynatrace API\n# Loading recent logs...\n# Use Ctrl+R or Ctrl+Enter to run custom queries"
+            self.notify("Loading recent logs from Dynatrace...")
+            self._load_initial_logs()
+    
+    def _load_initial_logs(self):
+        """Load initial logs from Dynatrace API on startup"""
+        try:
+            api_response = self.dynatrace_client.execute_query("fetch logs", self.current_time_range)
+            
+            if "error" in api_response:
+                self.notify(f"Failed to load logs: {api_response['error']}")
+                self.current_logs = []
+            else:
+                self.current_logs = self.dynatrace_client.convert_to_log_format(api_response)
+                self.notify(f"Loaded {len(self.current_logs)} recent logs from Dynatrace")
+                
+                # Update query input to show success
+                query_input = self.query_one("#query_input", QueryTextArea)
+                query_input.text = "# Connected to Dynatrace API\n# Recent logs loaded - enter your DQL query here...\n# Use Ctrl+R or Ctrl+Enter to run"
+                
+        except Exception as e:
+            self.notify(f"Error loading initial logs: {str(e)}")
+            self.current_logs = []
+        
+        # Populate table with loaded data (or empty if failed)
+        self.populate_table()
     
     def setup_table(self):
         table = self.query_one("#log_table", LogTable)
@@ -213,10 +260,14 @@ class DynatraceLogTUI(App):
             # Add to history when executing a real query
             self.query_history.add_query(actual_query)
             
-            if self.use_dummy_data:
-                # Use dummy data filtering
+            if self.development_mode:
+                # Development mode - use dummy data filtering
                 self.current_logs = filter_logs(self.all_logs, actual_query)
-                self.notify("Using dummy data - set DYNATRACE_TOKEN environment variable for real data")
+                self.notify("Development mode: Filtering dummy data")
+            elif self.use_dummy_data:
+                # Fallback mode - use dummy data filtering
+                self.current_logs = filter_logs(self.all_logs, actual_query)
+                self.notify("Using dummy data - configure Dynatrace credentials for real data")
             else:
                 # Execute real Dynatrace query
                 self.notify("Executing query...")
@@ -234,17 +285,21 @@ class DynatraceLogTUI(App):
                     self.notify(f"Query error: {str(e)}")
                     self.current_logs = []
         else:
-            if self.use_dummy_data:
+            if self.development_mode:
+                # Development mode - use dummy data
                 self.current_logs = self.all_logs.copy()
             else:
-                # For empty query with real API, show recent logs
+                # Production mode - reload recent logs from API
                 try:
                     api_response = self.dynatrace_client.execute_query("fetch logs", self.current_time_range)
                     if "error" not in api_response:
                         self.current_logs = self.dynatrace_client.convert_to_log_format(api_response)
+                        self.notify(f"Reloaded {len(self.current_logs)} recent logs")
                     else:
+                        self.notify(f"Failed to reload logs: {api_response['error']}")
                         self.current_logs = []
-                except:
+                except Exception as e:
+                    self.notify(f"Error reloading logs: {str(e)}")
                     self.current_logs = []
         
         self.populate_table()
@@ -340,8 +395,6 @@ class DynatraceLogTUI(App):
         if self.details_visible and self.current_details_index < len(self.details_heights) - 1:
             self.current_details_index += 1
             self._update_details_height()
-            height = self.details_heights[self.current_details_index]
-            self.notify(f"Log details height: {height} lines")
         elif not self.details_visible:
             self.details_visible = True
             self._update_details_height()
@@ -352,8 +405,6 @@ class DynatraceLogTUI(App):
         if self.details_visible and self.current_details_index > 0:
             self.current_details_index -= 1
             self._update_details_height()
-            height = self.details_heights[self.current_details_index]
-            self.notify(f"Log details height: {height} lines")
         elif self.details_visible and self.current_details_index == 0:
             self.details_visible = False
             self._update_details_height()
@@ -362,10 +413,7 @@ class DynatraceLogTUI(App):
     def action_toggle_details(self):
         self.details_visible = not self.details_visible
         self._update_details_height()
-        if self.details_visible:
-            height = self.details_heights[self.current_details_index]
-            self.notify(f"Log details shown: {height} lines")
-        else:
+        if not self.details_visible:
             self.notify("Log details hidden")
     
     def _update_details_height(self):
@@ -381,7 +429,10 @@ class DynatraceLogTUI(App):
     
     def update_log_count(self):
         count_widget = self.query_one("#log_count", Static)
-        count_widget.update(f"Showing: {len(self.current_logs)} / {len(self.all_logs)}")
+        if self.development_mode:
+            count_widget.update(f"Showing: {len(self.current_logs)} / {len(self.all_logs)} (dummy data)")
+        else:
+            count_widget.update(f"Showing: {len(self.current_logs)} logs from Dynatrace")
     
     
     
@@ -456,7 +507,18 @@ Features:
         self.notify(help_text)
 
 def main():
-    app = DynatraceLogTUI()
+    parser = argparse.ArgumentParser(
+        description="Dynatrace Log TUI - Terminal interface for querying Dynatrace logs"
+    )
+    parser.add_argument(
+        "--development", 
+        action="store_true",
+        help="Run in development mode with dummy data (no API credentials required)"
+    )
+    
+    args = parser.parse_args()
+    
+    app = DynatraceLogTUI(development_mode=args.development)
     app.run()
 
 if __name__ == "__main__":
