@@ -3,6 +3,9 @@ name: Build Release Binaries
 on:
   release:
     types: [created]
+  push:
+    tags:
+      - 'v*'
 
 jobs:
   build-binaries:
@@ -43,7 +46,14 @@ jobs:
         run: |
           pyinstaller --onefile --name ${{ matrix.binary_name }} --add-data="src/dynatrace_log_tui:dynatrace_log_tui" main.py
 
-      - name: Upload binary to release
+      - name: Upload binary as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: ./dist/${{ matrix.binary_name }}
+
+      - name: Upload binary to release (if release event)
+        if: github.event_name == 'release'
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
