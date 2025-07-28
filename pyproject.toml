@@ -1,0 +1,21 @@
+[project]
+name = "dynatrace-log-tui"
+version = "0.1.0"
+description = "A TUI application for querying and browsing Dynatrace logs using DQL"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "rich>=14.0.0",
+    "textual>=4.0.0",
+    "requests>=2.28.0",
+]
+
+[project.scripts]
+dynatrace-log-tui = "dynatrace_log_tui.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dynatrace_log_tui"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
